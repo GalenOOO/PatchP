@@ -10,7 +10,7 @@ class PSPModule(nn.Module):
         self.stages = []
         self.stages = nn.ModuleList([self._make_stage(feature_size,size) for size in sizes])
         self.convTotal = nn.Conv2d(feature_size * (len(sizes)+1), outFeatures, kernel_size=1)
-        self.relu = nn.Relu()
+        self.relu = nn.ReLU()
 
     def _make_stage(self,feature_size,size):
         pool = nn.AdaptiveAvgPool2d(output_size=(size,size)) #输出结果就是size×size大小

@@ -135,7 +135,7 @@ class PoseDataset(data.Dataset):
         choose = np.array([choose])
 
         cam_scale = 1.0
-        # 将深度图转化为点云，计算依据是坐标的变换关系
+        # 将深度图转化为点云，计算依据是坐标的变换关系（点云坐标是相机坐标系下的坐标）
         pt2 = depth_masked / cam_scale # 点云的z
         pt0 = (ymap_masked - self.cam_cx) * pt2 / self.cam_fx #点云的x
         pt1 = (xmap_masked - self.cam_cy) * pt2 / self.cam_fy #点云的y
@@ -161,7 +161,7 @@ class PoseDataset(data.Dataset):
             target = np.add(target, target_t / 1000.0)
             out_t = target_t / 1000.0 
         
-        return self.norm(torch.from_numpy(img_masked.astype(np.float32))), \
+        return self.norm(torch.from_numpy(img_masked.astype(np.float32))),\
                torch.from_numpy(cloud.astype(np.float32)), \
                torch.LongTensor(choose.astype(np.int32)), \
                torch.from_numpy(target.astype(np.float32)), \

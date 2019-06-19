@@ -3,16 +3,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
-def conv3x3(in_channels,out_channels,stride=1,padding=1,dilation = 1):
+def conv3x3(in_channels,out_channels,stride=1,dilation = 1):
     return nn.Conv2d(in_channels,out_channels,kernel_size=3 ,stride = stride,
-                    padding=padding,dilation=dilation,bias=False)
+                    padding=dilation,dilation=dilation,bias=False)
 
 class basicBlock(nn.Module):
     expansion = 1
-    def __init__(self,in_channels,out_channels,stride=1,padding=1,dilation = 1, downsample=None):
+    def __init__(self,in_channels,out_channels,stride=1,dilation = 1, downsample=None):
         super(basicBlock,self).__init__()
         self.stride = stride
-        self.layer1 = conv3x3(in_channels,out_channels,stride=stride)
+        self.layer1 = conv3x3(in_channels,out_channels,stride=stride,dilation=dilation)
         self.layer2 = conv3x3(out_channels,out_channels)#layer2都不downsample和改变channel数量
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
@@ -79,9 +79,9 @@ class ResNet(nn.Module):#整个resnet，将图像大小变为了原来的1/8
                 nn.Conv2d(self.inplanes,out_channelNum * block.expansion,
                             kernel_size=1, stride=stride,bias=False)
             )
-        layers = [block(self.inplanes,out_channelNum,stride,downsample)]
+        layers = [block(self.inplanes,out_channelNum,stride,dilation,downsample)]
         self.inplanes = out_channelNum*block.expansion
-        for i in range(num_block):
+        for i in range(1,num_block):
             layers.append(block(self.inplanes,out_channelNum,dilation=dilation))
         return nn.Sequential(*layers)
 

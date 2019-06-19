@@ -22,7 +22,7 @@ class featureFusionNet(nn.Module):
     def __init__(self,num_points):
         super(featureFusionNet,self).__init__()
         self.num_points = num_points
-        # 这里用的一维卷积，核的大小为1，相当于只做了通道数的变换
+        # 这里用的一维卷积，核的大小为1，相当于只做了通道数的变换！！！！！这里考虑将核变大
         self.cloudConv1 = nn.Conv1d(3,64,1)
         self.cloudConv2 = nn.Conv1d(64,128,1)
 
@@ -41,7 +41,7 @@ class featureFusionNet(nn.Module):
 
         cloudFeat2 = F.relu(self.cloudConv2(cloudFeat1))
         colorFeat2 = F.relu(self.colorConv2(colorFeat1))
-        catFeat2 = torch.cat((cloudFeat1,colorFeat2), dim=1) #128+128=256dim
+        catFeat2 = torch.cat((cloudFeat2,colorFeat2), dim=1) #128+128=256dim
 
         fusionFeat = F.relu(self.featConv1(catFeat2))
         fusionFeat = F.relu(self.featConv2(fusionFeat))
@@ -63,26 +63,26 @@ class poseNet(nn.Module): #必须继承nn.Module
         self.bodyCNN = modifiedResNet()
         self.feat = featureFusionNet(num_cloudPoints)
 
-        self.conv1_r = nn.Conv1d(1408,outChannels,kerSize)
-        self.conv1_t = nn.Conv1d(1408,outChannels,kerSize)
-        self.conv1_c = nn.Conv1d(1408,outChannels,kerSize)
+        self.conv1_r = nn.Conv1d(1408,self.outChannels,self.kerSize)
+        self.conv1_t = nn.Conv1d(1408,self.outChannels,self.kerSize)
+        self.conv1_c = nn.Conv1d(1408,self.outChannels,self.kerSize)
 
-        self.conv2_r = nn.Conv1d(outChannels,256,kerSize)
-        self.conv2_t = nn.Conv1d(outChannels,256,kerSize)
-        self.conv2_c = nn.Conv1d(outChannels,256,kerSize)
+        self.conv2_r = nn.Conv1d(self.outChannels,256,self.kerSize)
+        self.conv2_t = nn.Conv1d(self.outChannels,256,self.kerSize)
+        self.conv2_c = nn.Conv1d(self.outChannels,256,self.kerSize)
 
-        self.conv3_r = nn.Conv1d(256,128,kerSize)
-        self.conv3_t = nn.Conv1d(256,128,kerSize)
-        self.conv3_c = nn.Conv1d(256,128,kerSize)
+        self.conv3_r = nn.Conv1d(256,128,self.kerSize)
+        self.conv3_t = nn.Conv1d(256,128,self.kerSize)
+        self.conv3_c = nn.Conv1d(256,128,self.kerSize)
 
-        self.conv4_r = nn.Conv1d(128,num_obj*4,kerSize) #四元数
-        self.conv4_t = nn.Conv1d(128,num_obj*3,kerSize)
-        self.conv4_c = nn.Conv1d(128,num_obj*1,kerSize)
+        self.conv4_r = nn.Conv1d(128,num_obj*4,self.kerSize) #四元数
+        self.conv4_t = nn.Conv1d(128,num_obj*3,self.kerSize)
+        self.conv4_c = nn.Conv1d(128,num_obj*1,self.kerSize)
 
     def forward(self, img, cloud, choose, obj):
         colorFeat = self.bodyCNN(img) #colorFeat的di应该是32。大小和输入的img一样
         bs, di, _, _ = colorFeat.size()
-        colorEmb = colorFeat.view(bs,di,-1)
+        colorEmb = colorFeat.view(bs,di,-1)#将二维变成一维
         choose = choose.repeat(1,di,1) #choose本是bs×1×n，经此操作变成bs×di×n；如果是（2，di，3），则2×di×3n
         colorEmb = torch.gather(colorEmb, 2, choose).contiguous() 
         # 根据choose挑选出和深度图（点云）对应的彩色图提取的特征，contiguous()将数据在内存中的表示连续化
@@ -126,6 +126,10 @@ class poseNet(nn.Module): #必须继承nn.Module
         outCx = outCx.contiguous().transpose(2,1).contiguous()
 
         return outRx, outTx, outCx, colorEmb.detach() #detach()作用是不让变量求导，仍与colorEmb指向同一tensor
+        # torch.Size([1, 500, 4])
+        # torch.Size([1, 500, 3])
+        # torch.Size([1, 500, 1])
+        # torch.Size([1, 32, 500])
 
 class poseRefineNetFeat(nn.Module):
     def __init__(self,num_points):

@@ -15,7 +15,7 @@ class KNearestNeighbor(Function):
     
     def forward(self,ref,query):
         ref = ref.float().cuda()
-        query = query.float.cuda()
+        query = query.float().cuda()
 
         inds = torch.empty(query.shape[0], self.k, query.shape[2]).long().cuda() #Returns a tensor filled with uninitialized data. The shape of the tensor is defined by the variable argument sizes.
         knn_pytorch.knn(ref, query, inds)

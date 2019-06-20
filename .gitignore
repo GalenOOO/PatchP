@@ -2,3 +2,4 @@ build
 *.so
 *.egg
 *.py[cod]
+*.pth

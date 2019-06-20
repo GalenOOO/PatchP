@@ -85,7 +85,7 @@ class PoseDataset(data.Dataset):
 
         if obj == 2:
             for i in range(0,len(self.meta[obj][rank])):
-                if self.meta[obj][i]['obj_id'] == 2:
+                if self.meta[obj][rank][i]['obj_id'] == 2:
                     meta = self.meta[obj][rank][i]
                     break
         else:

@@ -3,3 +3,4 @@ build
 *.egg
 *.py[cod]
 *.pth
+*.txt

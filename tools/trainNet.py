@@ -57,7 +57,7 @@ def main():
     estimator = poseNet(opt.numPoints, opt.numObjects)
     estimator.cuda() # or estimator.to('cuda')
     if opt.resumePosenet != '':
-        estimator.load_state_dict(torch.load('{0}/{1}'.format(opt.modelOutFolder,opt.resumePosenet)))
+        estimator.load_state_dict(torch.load('{0}/{1}'.format(opt.modelFolder,opt.resumePosenet)))
     
     optimizer = optim.Adam(estimator.parameters(), lr=opt.lr)
 

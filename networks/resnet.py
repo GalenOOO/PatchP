@@ -13,7 +13,7 @@ class basicBlock(nn.Module):
         super(basicBlock,self).__init__()
         self.stride = stride
         self.layer1 = conv3x3(in_channels,out_channels,stride=stride,dilation=dilation)
-        self.layer2 = conv3x3(out_channels,out_channels)#layer2都不downsample和改变channel数量
+        self.layer2 = conv3x3(out_channels,out_channels, stride=1, dilation=dilation)#layer2都不downsample和改变channel数量
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
 
@@ -40,7 +40,7 @@ class basicBlock(nn.Module):
 class ResNet(nn.Module):#整个resnet，将图像大小变为了原来的1/8
     # out_channelNum = [64,128,256,512]
     # in_channelNum = [64,64,128,256]
-    def __init__(self,block,sizes=[2,2,2,2]):
+    def __init__(self,block,sizes=(2,2,2,2)):
         self.inplanes = 64
         super(ResNet,self).__init__()
         self.pre = nn.Sequential(
@@ -57,7 +57,7 @@ class ResNet(nn.Module):#整个resnet，将图像大小变为了原来的1/8
         # self.stages = nn.ModuleList([self._make_stage(sizes[i],in_channelNum[i],out_channelNum[i]) for i in len(sizes)])
         self.avgPool = nn.AvgPool2d(kernel_size=2,stride = 2)
 
-        self.layer1 = self._make_layer(block,  64, sizes[0], stride=1)
+        self.layer1 = self._make_layer(block,  64, sizes[0])
         self.layer2 = self._make_layer(block, 128, sizes[1], stride=2) #将图像大小减半
         self.layer3 = self._make_layer(block, 256, sizes[2], stride=1, dilation=2)
         self.layer4 = self._make_layer(block, 512, sizes[3], stride=1, dilation=4)
@@ -79,7 +79,7 @@ class ResNet(nn.Module):#整个resnet，将图像大小变为了原来的1/8
                 nn.Conv2d(self.inplanes,out_channelNum * block.expansion,
                             kernel_size=1, stride=stride,bias=False)
             )
-        layers = [block(self.inplanes,out_channelNum,stride,dilation,downsample)]
+        layers = [block(self.inplanes,out_channelNum,stride,downsample=downsample)]
         self.inplanes = out_channelNum*block.expansion
         for i in range(1,num_block):
             layers.append(block(self.inplanes,out_channelNum,dilation=dilation))

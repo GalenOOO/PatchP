@@ -29,7 +29,7 @@ parser.add_argument('--w', default=0.015, help='loss calculation hyperparameter'
 parser.add_argument('--decayMargin', default=0.016, help='margin to decay lr ')
 parser.add_argument('--addNoise',type=bool, default=True, help='whether adding random noise to the training data or not')
 parser.add_argument('--noiseTrans', default=0.03, help='range of the random noise of translation added to the training data')
-parser.add_argument('--nepoch', type=int, default=3, help='max number of epochs to train')
+parser.add_argument('--nepoch', type=int, default=20, help='max number of epochs to train')
 parser.add_argument('--resumePosenet', type=str, default = '',  help='resume PoseNet model')
 parser.add_argument('--startEpoch', type=int, default = 1, help='which epoch to start')
 opt = parser.parse_args()

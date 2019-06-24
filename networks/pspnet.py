@@ -78,7 +78,6 @@ class PSPNet(nn.Module):
         pspTotalFeat = self.drop_2(pspTotalFeat)
 
         pspTotalFeat = self.up_3(pspTotalFeat)
-        pspTotalFeat = self.drop_2(pspTotalFeat)
         #因为resnet的输出是其输入图像的1/8大小，所以这里执行了三次上采样操作，将特征图大小恢复到了原始尺寸
 
         return self.final(pspTotalFeat)

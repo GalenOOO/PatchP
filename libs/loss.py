@@ -28,7 +28,7 @@ def loss_calculation(pred_r,pred_t,pred_c,targetCloud, modelPoints,idx,cloud,w,r
     pred_c = pred_c.contiguous().view(bs * num_p)
 
     rMat = rMat.contiguous().transpose(2,1).contiguous() #这里为什么转置？正常来讲，是rMat×point，而在下面计算预测值时，由于有很多point，所以采用了point×rMat
-    predCloud = torch.add(torch.bmm(modelPoints,rMat),cloud+pred_t) #####  训练的t就是对每个点的补偿值，所以加上cloud（可考虑将Cloud删除进行测试）
+    predCloud = torch.add(torch.bmm(modelPoints,rMat),cloud+pred_t) #####  训练的t就是对每个点的补偿值，所以加上cloud（可考虑将Cloud删除进行测试）[改进]
     # torch.bmm(batch1, batch2, out=None) → Tensor 
     # If batch1 is a (b×n×m) tensor, batch2 is a (b×m×p) tensor, out will be a (b×n×p) tensor.
 

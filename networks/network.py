@@ -22,7 +22,7 @@ class featureFusionNet(nn.Module):
     def __init__(self,num_points):
         super(featureFusionNet,self).__init__()
         self.num_points = num_points
-        # 这里用的一维卷积，核的大小为1，相当于只做了通道数的变换！！！！！这里考虑将核变大
+        # 这里用的一维卷积，核的大小为1，相当于只做了通道数的变换！！！！！这里考虑将核变大[改进]
         self.cloudConv1 = nn.Conv1d(3,64,1)
         self.cloudConv2 = nn.Conv1d(64,128,1)
 

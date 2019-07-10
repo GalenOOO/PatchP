@@ -44,8 +44,8 @@ class ResNet(nn.Module):#整个resnet，将图像大小变为了原来的1/8
         self.inplanes = 64
         super(ResNet,self).__init__()
         self.pre = nn.Sequential(
-            nn.Conv2d(3,64,kernel_size=7,stride=2,padding=3,bias=False),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(6,64,kernel_size=7,stride=2,padding=3,bias=False),
+            # nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         ) # pre这一些层，将图像缩小了4倍（Conv2d和MaxPool2d）
@@ -99,6 +99,10 @@ class ResNet(nn.Module):#整个resnet，将图像大小变为了原来的1/8
 
 def resnet18(pretrained=False):
     model = ResNet(basicBlock,[2,2,2,2])
+    return model
+
+def resnet34(pretrained=False):
+    model = ResNet(basicBlock, [3, 4, 6, 3])
     return model
 
 # class ResidualBlock(nn.Module):

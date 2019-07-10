@@ -1,137 +1,98 @@
+
 import _init_paths
 import argparse
 import os
-import random
 import numpy as np
 import yaml
-import copy
+
 import torch
 import torch.nn as nn
 import torch.nn.parallel
-import torch.backends.cudnn as cudnn
-import torch.optim as optim
 import torch.utils.data
-import torchvision.datasets as dset
-import torchvision.transforms as transforms
-import torchvision.utils as vutils
 from torch.autograd import Variable
-from datasets.linemod.dataset import PoseDataset as PoseDataset_linemod
-from lib.network import PoseNet, PoseRefineNet
-from lib.loss import Loss
-from lib.loss_refiner import Loss_refine
-from lib.transformations import euler_matrix, quaternion_matrix, quaternion_from_matrix
-from lib.knn.__init__ import KNearestNeighbor
+
+from datasets.dataset import PoseDataset as PoseDataset
+from networks.network import poseNet,poseRefineNet
+
+from libs.loss import Loss
+from libs.transformations import euler_matrix, quaternion_matrix, quaternion_from_matrix
+from tools.utils import setup_logger
+from libs.knn.__init__ import KNearestNeighbor
 import cv2
 from matplotlib import pyplot as plt
+
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset_root', type=str, default = '', help='dataset root dir')
-parser.add_argument('--model', type=str, default = '',  help='resume PoseNet model')
-parser.add_argument('--refine_model', type=str, default = '',  help='resume PoseRefineNet model')
+parser.add_argument('--datasetRoot', type=str, default='', help='dataset root dir')
+parser.add_argument('--model', type=str, default='', help='resume poseNet model')
+
 opt = parser.parse_args()
 
-num_objects = 13
-objlist = [1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15]
-num_points = 500
-iteration = 2
-bs = 1
-dataset_config_dir = 'datasets/linemod/dataset_config'
-output_result_dir = 'experiments/eval_result/linemod'
+numObjects = 13
+objList = [1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15]
+numPoints = 500
+batchSize = 1
+datasetConfigDir = '/home/galen/deepLearning/poseEstimation/DenseFusion/datasets/linemod/Linemod_preprocessed/models/'
+output_result_dir = 'experimentResult/eval_results/linemod'
 knn = KNearestNeighbor(1)
 
-estimator = PoseNet(num_points = num_points, num_obj = num_objects)
+estimator = poseNet(numPoints,numObjects)
 estimator.cuda()
-refiner = PoseRefineNet(num_points = num_points, num_obj = num_objects)
-refiner.cuda()
 estimator.load_state_dict(torch.load(opt.model))
-refiner.load_state_dict(torch.load(opt.refine_model))
 estimator.eval()
-refiner.eval()
 
-testdataset = PoseDataset_linemod('eval', num_points, False, opt.dataset_root, 0.0, True)
-testdataloader = torch.utils.data.DataLoader(testdataset, batch_size=1, shuffle=False, num_workers=10)
+testDataset = PoseDataset('eval',numPoints,False,opt.datasetRoot,0.0,True)
+testDataLoader = torch.utils.data.DataLoader(testDataset,batch_size=1,shuffle=False, num_workers=10)
 
-sym_list = testdataset.get_sym_list()
-num_points_mesh = testdataset.get_num_points_mesh()
-criterion = Loss(num_points_mesh, sym_list)
-criterion_refine = Loss_refine(num_points_mesh, sym_list)
+symList = testDataset.get_sym_list()
+numPointsMesh = testDataset.get_num_points_mesh()
+poseNetLoss = Loss(numPointsMesh,symList)
 
 diameter = []
-meta_file = open('{0}/models_info.yml'.format(dataset_config_dir), 'r')
+meta_file = open('{0}/models_info.yml'.format(datasetConfigDir), 'r')
 meta = yaml.load(meta_file)
-for obj in objlist:
-    diameter.append(meta[obj]['diameter'] / 1000.0 * 0.1)
+kn = 0.1 # ADD 参数设置
+for obj in objList:
+    diameter.append(meta[obj]['diameter']/1000.0 * kn)
 print(diameter)
 
-success_count = [0 for i in range(num_objects)]
-num_count = [0 for i in range(num_objects)]
+successCount = [0 for i in range(numObjects)]
+numCount = [0 for i in range(numObjects)]
 cnt = 0
-for i, data in enumerate(testdataloader, 0):
+for i,data in enumerate(testDataLoader, 0):
     if len(data) != 7:
-        print(i,len(data))
+        print(i,len(data)) != 7
         continue
-    points, choose, img, target, model_points, idx, ori_img = data
-    # print(ori_img.type())
+
+    img, cloud, choose, tarPoints, modelPoints, idx, ori_img = data
     ori_img = np.array(ori_img)
-    # print(ori_img[0].shape)
-    # image = np.transpose(image[0], (1, 2, 0))
 
     cnt += 1
     if cnt%100 != 0:
-         continue
-
-    if len(points.size()) == 2:
-        print('No.{0} NOT Pass! Lost detection!'.format(i))
-        fw.write('No.{0} NOT Pass! Lost detection!\n'.format(i))
         continue
-    points, choose, img, target, model_points, idx = Variable(points).cuda(), \
-                                                     Variable(choose).cuda(), \
-                                                     Variable(img).cuda(), \
-                                                     Variable(target).cuda(), \
-                                                     Variable(model_points).cuda(), \
-                                                     Variable(idx).cuda()
+    if len(cloud.size()) == 2:
+        print('No.{0} NOT Pass! Lost detection!'.format(i))
+        continue
+    img = Variable(img).cuda()
+    cloud = Variable(cloud).cuda()
+    choose = Variable(choose).cuda()
+    tarPoints = Variable(tarPoints).cuda()
+    modelPoints = Variable(modelPoints).cuda()
+    idx = Variable(idx).cuda()
+    pred_r, pred_t, pred_c, colorEmb = estimator(img,cloud,choose,idx)
 
-    pred_r, pred_t, pred_c, emb = estimator(img, points, choose, idx)
-    pred_r = pred_r / torch.norm(pred_r, dim=2).view(1, num_points-4, 1)
-    pred_c = pred_c.view(bs, num_points-4)
+    pred_r = pred_r / (torch.norm(pred_r, dim=2).view(1, numPoints, 1))
+    pred_c = pred_c.view(batchSize, numPoints)
     how_max, which_max = torch.max(pred_c, 1)
-    pred_t = pred_t.view(bs * (num_points-4), 1, 3)
+    pred_t = pred_t.view(batchSize*numPoints,1,3)
 
     my_r = pred_r[0][which_max[0]].view(-1).cpu().data.numpy()
-    # my_t = (points.view(bs * num_points, 1, 3) + pred_t)[which_max[0]].view(-1).cpu().data.numpy()
-    my_t = pred_t[which_max[0]].view(-1).cpu().data.numpy()
+    my_t = (cloud.view(batchSize * numPoints, 1, 3) + pred_t)[which_max[0]].view(-1).cpu().data.numpy()
     my_pred = np.append(my_r, my_t)
 
-    for ite in range(0, iteration):
-        T = Variable(torch.from_numpy(my_t.astype(np.float32))).cuda().view(1, 3).repeat(num_points, 1).contiguous().view(1, num_points, 3)
-        my_mat = quaternion_matrix(my_r)
-        R = Variable(torch.from_numpy(my_mat[:3, :3].astype(np.float32))).cuda().view(1, 3, 3)
-        my_mat[0:3, 3] = my_t
-        
-        new_points = torch.bmm((points - T), R).contiguous()
-        pred_r, pred_t = refiner(new_points, emb, idx)
-        pred_r = pred_r.view(1, 1, -1)
-        pred_r = pred_r / (torch.norm(pred_r, dim=2).view(1, 1, 1))
-        my_r_2 = pred_r.view(-1).cpu().data.numpy()
-        my_t_2 = pred_t.view(-1).cpu().data.numpy()
-        my_mat_2 = quaternion_matrix(my_r_2)
-        my_mat_2[0:3, 3] = my_t_2
+    modelPoints = modelPoints[0].cpu().detach().numpy()
+    my_r = quaternion_matrix(my_r)[:3,:3]
+    pred = np.dot(modelPoints,my_r.T) + my_t
 
-        my_mat_final = np.dot(my_mat, my_mat_2)
-        my_r_final = copy.deepcopy(my_mat_final)
-        my_r_final[0:3, 3] = 0
-        my_r_final = quaternion_from_matrix(my_r_final, True)
-        my_t_final = np.array([my_mat_final[0][3], my_mat_final[1][3], my_mat_final[2][3]])
-
-        my_pred = np.append(my_r_final, my_t_final)
-        my_r = my_r_final
-        my_t = my_t_final
-
-    # Here 'my_pred' is the final pose estimation result after refinement ('my_r': quaternion, 'my_t': translation)
-
-    model_points = model_points[0].cpu().detach().numpy()
-    my_r = quaternion_matrix(my_r)[:3, :3]
-    pred = np.dot(model_points, my_r.T) + my_t
-    # print(pred.shape)
     cam_cx = 325.26110
     cam_cy = 242.04899
     cam_fx = 572.41140
@@ -139,21 +100,20 @@ for i, data in enumerate(testdataloader, 0):
     d = pred[:,2] / 1.0
     rows = pred[:,0] * cam_fx / pred[:,2] + cam_cx
     cols = pred[:,1] * cam_fy / pred[:,2] + cam_cy
-    # print(i.shape)
-    # print(j.shape)
-    target = target[0].cpu().detach().numpy()
 
-    if idx[0].item() in sym_list:
+    tarPoints = tarPoints[0].cpu().detach().numpy()
+
+    if idx[0].item() in symList:
         pred = torch.from_numpy(pred.astype(np.float32)).cuda().transpose(1, 0).contiguous()
-        target = torch.from_numpy(target.astype(np.float32)).cuda().transpose(1, 0).contiguous()
-        inds = knn(target.unsqueeze(0), pred.unsqueeze(0))
-        target = torch.index_select(target, 1, inds.view(-1) - 1)
-        dis = torch.mean(torch.norm((pred.transpose(1, 0) - target.transpose(1, 0)), dim=1), dim=0).item()
+        tarPoints = torch.from_numpy(tarPoints.astype(np.float32)).cuda().transpose(1, 0).contiguous()
+        inds = knn(tarPoints.unsqueeze(0), pred.unsqueeze(0))
+        tarPoints = torch.index_select(tarPoints, 1, inds.view(-1) - 1)
+        dis = torch.mean(torch.norm((pred.transpose(1, 0) - tarPoints.transpose(1, 0)), dim=1), dim=0).item()
     else:
-        dis = np.mean(np.linalg.norm(pred - target, axis=1))
+        dis = np.mean(np.linalg.norm(pred - tarPoints, axis=1))
 
     if dis < diameter[idx[0].item()]:
-        success_count[idx[0].item()] += 1
+        successCount[idx[0].item()] += 1
         print('No.{0} Pass! Distance: {1}'.format(i, dis))
         plt.imshow(ori_img[0])
         plt.plot(rows,cols,'r,')
@@ -163,9 +123,12 @@ for i, data in enumerate(testdataloader, 0):
         plt.imshow(ori_img[0])
         plt.plot(rows,cols,'b,')
         plt.show()
-    num_count[idx[0].item()] += 1
+    numCount[idx[0].item()] += 1
 
-    
-    if cnt>10000:
+    if cnt > 10000:
         break
+
+
+
+
 

@@ -28,7 +28,7 @@ numObjects = 13
 objList = [1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15]
 numPoints = 500
 batchSize = 1
-datasetConfigDir = '/home/galen/deepLearningCode/PoseEstimation/DenseFusion/datasets/linemod/Linemod_preprocessed/models/'
+datasetConfigDir = '/home/galen/deepLearning/poseEstimation/DenseFusion/datasets/linemod/Linemod_preprocessed/models/'
 output_result_dir = 'experimentResult/eval_results/linemod'
 knn = KNearestNeighbor(1)
 

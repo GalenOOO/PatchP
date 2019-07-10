@@ -19,7 +19,7 @@
 import cv2
 import numpy as np
 import torch
-A = cv2.imread("/home/galen/deepLearningCode/PoseEstimation/PatchP/test.png")
+A = cv2.imread("/home/galen/deepLearning/poseEstimation/PatchP/test.png")
 ori_img = np.array(A)
 ori_img=torch.from_numpy(ori_img.astype(np.float32))
 print(ori_img.type())

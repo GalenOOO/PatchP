@@ -5,7 +5,8 @@ import torch.nn.functional as F
 from networks.pspnet import PSPNet
 
 psp_models = {
-    'resnet18': lambda:PSPNet(sizes=[1,2,3,6],feature_size=512,deep_features_size=256,backend='resnet18')
+    'resnet18': lambda: PSPNet(sizes=[1, 2, 3, 6], feature_size=512, deep_features_size=256, backend='resnet18'),
+    'resnet34': lambda: PSPNet(sizes=[1, 2, 3, 6], feature_size=512, deep_features_size=256, backend='resnet34'),
 }
 
 class modifiedResNet(nn.Module):
@@ -37,7 +38,7 @@ class featureFusionNet(nn.Module):
     def forward(self,cloud,colorEmb):
         cloudFeat1 = F.relu(self.cloudConv1(cloud))
         colorFeat1 = F.relu(self.colorConv1(colorEmb))
-        catFeat1 = torch.cat((cloudFeat1,cloudFeat1), dim=1) #64+64=128dim
+        catFeat1 = torch.cat((cloudFeat1,colorFeat1), dim=1) #64+64=128dim
 
         cloudFeat2 = F.relu(self.cloudConv2(cloudFeat1))
         colorFeat2 = F.relu(self.colorConv2(colorFeat1))
@@ -50,26 +51,51 @@ class featureFusionNet(nn.Module):
         globalFeat = globalFeat.view(-1,1024,1).repeat(1,1,self.num_points)
         # 返回结果是bs×1408×num_points维的变量
         return torch.cat([catFeat1,catFeat2,globalFeat],dim=1)#128 + 256 + 1024
-  
-class poseNet(nn.Module): #必须继承nn.Module
-    def __init__(self,num_cloudPoints, num_obj): 
-        super(poseNet, self).__init__() #需要调用父类的构造方法
-        self.num_cloudPoints = num_cloudPoints
-        self.num_obj = num_obj
 
-        self.outChannels = 640
+class featureExtraction(nn.Module):
+    def __init__(self,pooledImgSize):
+        super(featureExtraction,self).__init__()
+        self.pooledImgSize = pooledImgSize
+        self.Conv1 = nn.Conv2d(64,128,1)
+        self.Conv2 = nn.Conv2d(128,256,1)
+        self.Conv3 = nn.Conv2d(256,512,1)
+        self.Conv4 = nn.Conv2d(512,1024,1)
+        self.getGlobalFeat = nn.AvgPool2d(pooledImgSize)
+        
+    def forward(self,colorEmb):
+        colorFeat = F.relu(self.Conv1(colorEmb)) 
+        colorFeat = F.relu(self.Conv2(colorFeat))
+        colorFeat = F.relu(self.Conv3(colorFeat))
+        colorFeat = F.relu(self.Conv4(colorFeat)) # 1024dim * (pooledImgSize * pooledImgSize)
+
+        globalFeat = self.getGlobalFeat(colorFeat) #globalFeat: bs*1024*1
+        globalFeat = globalFeat.view(-1,1024)
+        # globalFeat = globalFeat.view(-1,1024,1,1).repeat(1,1,self.pooledImgSize,self.pooledImgSize)
+        # return torch.cat([colorFeat,globalFeat],dim=1)#1024 + 1024 = 2048dim
+        return colorFeat,globalFeat #1024  1024 
+
+
+class poseNet(nn.Module): #必须继承nn.Module
+    def __init__(self,pooledImgSize, num_obj): 
+        super(poseNet, self).__init__() #需要调用父类的构造方法
+        self.pooledImgSize = pooledImgSize
+        self.num_obj = num_obj
         self.kerSize = 1 # 考虑调整这个核的大小
         # 网络结构定义
         self.bodyCNN = modifiedResNet()
-        self.feat = featureFusionNet(num_cloudPoints)
+        self.feat = featureExtraction(pooledImgSize)
 
-        self.conv1_r = nn.Conv1d(1408,self.outChannels,self.kerSize)
-        self.conv1_t = nn.Conv1d(1408,self.outChannels,self.kerSize)
-        self.conv1_c = nn.Conv1d(1408,self.outChannels,self.kerSize)
+        self.Rconv0 = nn.Linear(1024,512)
+        self.tconv0 = nn.Linear(1024,512)
+        self.cconv0 = nn.Linear(1024,512)
 
-        self.conv2_r = nn.Conv1d(self.outChannels,256,self.kerSize)
-        self.conv2_t = nn.Conv1d(self.outChannels,256,self.kerSize)
-        self.conv2_c = nn.Conv1d(self.outChannels,256,self.kerSize)
+        self.conv1_r = nn.Conv1d(1024,512,3)
+        self.conv1_t = nn.Conv1d(1024,512,3)
+        self.conv1_c = nn.Conv1d(1024,512,3)
+
+        self.conv2_r = nn.Conv1d(1024,256,self.kerSize)
+        self.conv2_t = nn.Conv1d(1024,256,self.kerSize)
+        self.conv2_c = nn.Conv1d(1024,256,self.kerSize)
 
         self.conv3_r = nn.Conv1d(256,128,self.kerSize)
         self.conv3_t = nn.Conv1d(256,128,self.kerSize)
@@ -79,27 +105,47 @@ class poseNet(nn.Module): #必须继承nn.Module
         self.conv4_t = nn.Conv1d(128,num_obj*3,self.kerSize)
         self.conv4_c = nn.Conv1d(128,num_obj*1,self.kerSize)
 
-    def forward(self, img, cloud, choose, obj):
-        colorFeat = self.bodyCNN(img) #colorFeat的di应该是32。大小和输入的img一样
+    def forward(self, img_cloud, obj):
+        colorFeat = self.bodyCNN(img_cloud) #colorFeat的di应该是32。大小和输入的img一样
         bs, di, _, _ = colorFeat.size()
-        colorEmb = colorFeat.view(bs,di,-1)#将二维变成一维
-        choose = choose.repeat(1,di,1) #choose本是bs×1×n，经此操作变成bs×di×n；如果是（2，di，3），则2×di×3n
-        colorEmb = torch.gather(colorEmb, 2, choose).contiguous() 
-        # 根据choose挑选出和深度图（点云）对应的彩色图提取的特征，contiguous()将数据在内存中的表示连续化
-        # 现在colorEmb的尺寸应是bs，di，n（n对应于num_points)
+        # colorEmb = colorFeat.view(bs,di,-1)#将二维变成一维
+        # choose = choose.repeat(1,di,1) #choose本是bs×1×n，经此操作变成bs×di×n；如果是（2，di，3），则2×di×3n
+        # colorEmb = torch.gather(colorEmb, 2, choose).contiguous() 
+        # # 根据choose挑选出和深度图（点云）对应的彩色图提取的特征，contiguous()将数据在内存中的表示连续化
+        # # 现在colorEmb的尺寸应是bs，di，n（n对应于num_points)
 
-        # gather操作，gather(input,dim,index),要求input和index的维的数量相同，且除了dim指定的维外，其他维的长度应相同。
-        # input : torch.Size([1,2,3])  都是三维，除dim=2长度不同外，其他都相同，结果和较短的相同
-        # index : torch.Size([1,2,2])
-        # result : torch.Size([1,2,2])
+        # # gather操作，gather(input,dim,index),要求input和index的维的数量相同，且除了dim指定的维外，其他维的长度应相同。
+        # # input : torch.Size([1,2,3])  都是三维，除dim=2长度不同外，其他都相同，结果和较短的相同
+        # # index : torch.Size([1,2,2])
+        # # result : torch.Size([1,2,2])
 
-        cloud = cloud.transpose(2,1).contiguous() 
-        #cloud原始size：(batchSize，num_points,3) 执行完之后，变为（bs，3，num_points),和colorEmb统一了
-        denseFusionFeature = self.feat(cloud,colorEmb)
+        # cloud = cloud.transpose(2,1).contiguous() 
+        # #cloud原始size：(batchSize，num_points,3) 执行完之后，变为（bs，3，num_points),和colorEmb统一了
+        denseFeature, globalFeat = self.feat(colorFeat) 
+        # denseFeature bs* 1024dim * (pooledImgSize * pooledImgSize)
+        # globalFeat: bs*1024*1
+        denseFeature = denseFeature.view(bs,1024,-1)
+        #------------%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%---------------------
+        # 融合globalFeat 和 patchFeat
+        rx_g = F.relu(self.Rconv0(globalFeat))
+        tx_g = F.relu(self.tconv0(globalFeat))
+        cx_g = F.relu(self.cconv0(globalFeat))
 
-        rx = F.relu(self.conv1_r(denseFusionFeature))
-        tx = F.relu(self.conv1_t(denseFusionFeature))
-        cx = F.relu(self.conv1_c(denseFusionFeature))
+        rx = F.relu(self.conv1_r(denseFeature)) #dim = 512
+        tx = F.relu(self.conv1_t(denseFeature)) #dim = 512
+        cx = F.relu(self.conv1_c(denseFeature)) #dim = 512
+
+        _, dimensions, numPatchs =  cx.size()
+        rx_g = rx_g.view(-1,512,1).repeat(1,1,numPatchs)#dim = 512
+        tx_g = rx_g.view(-1,512,1).repeat(1,1,numPatchs)
+        cx_g = rx_g.view(-1,512,1).repeat(1,1,numPatchs)
+
+        
+        rx = torch.cat([rx,rx_g],dim=1)  #dim = 512 + 512 = 1024
+        tx = torch.cat([tx,tx_g],dim=1)
+        cx = torch.cat([cx,cx_g],dim=1)
+        #------------%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%---------------------
+
 
         rx = F.relu(self.conv2_r(rx))
         tx = F.relu(self.conv2_t(tx))
@@ -109,9 +155,9 @@ class poseNet(nn.Module): #必须继承nn.Module
         tx = F.relu(self.conv3_t(tx))
         cx = F.relu(self.conv3_c(cx))
 
-        rx = self.conv4_r(rx).view(bs,self.num_obj,4,self.num_cloudPoints)
-        tx = self.conv4_t(tx).view(bs,self.num_obj,3,self.num_cloudPoints)
-        cx = torch.sigmoid(self.conv4_c(cx).view(bs,self.num_obj,1,self.num_cloudPoints))
+        rx = self.conv4_r(rx).view(bs,self.num_obj,4,-1)
+        tx = self.conv4_t(tx).view(bs,self.num_obj,3,-1)
+        cx = torch.sigmoid(self.conv4_c(cx)).view(bs,self.num_obj,1,-1)
         # 上面代码是对每一个融合后特征点进行了位姿估计
 
         temp = 0
@@ -125,7 +171,7 @@ class poseNet(nn.Module): #必须继承nn.Module
         outTx = outTx.contiguous().transpose(2,1).contiguous()
         outCx = outCx.contiguous().transpose(2,1).contiguous()
 
-        return outRx, outTx, outCx, colorEmb.detach() #detach()作用是不让变量求导，仍与colorEmb指向同一tensor
+        return outRx, outTx, outCx, denseFeature.detach() #detach()作用是不让变量求导，仍与colorEmb指向同一tensor
         # torch.Size([1, 500, 4])
         # torch.Size([1, 500, 3])
         # torch.Size([1, 500, 1])
@@ -154,7 +200,7 @@ class poseRefineNetFeat(nn.Module):
 
         cloudFeat2 = F.relu(self.cloudConv2(cloudFeat1))
         colorFeat2 = F.relu(self.colorConv2(colorFeat1))
-        catFeat2 = torch.cat((cloudFeat1,colorFeat2), dim=1) #128+128=256dim
+        catFeat2 = torch.cat((cloudFeat2,colorFeat2), dim=1) #128+128=256dim
 
         fusionFeat = torch.cat([catFeat1, catFeat2], dim=1)
 

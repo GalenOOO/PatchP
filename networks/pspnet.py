@@ -41,7 +41,7 @@ class PSPNet(nn.Module):
         pretrained=False):
         super(PSPNet,self).__init__()
 
-        self.resnet18 = getattr(resnet,backend)(pretrained)
+        self.resnet = getattr(resnet,backend)(pretrained)
         # Get a named attribute from an object; 
         # getattr(x, 'y') is equivalent to x.y. 
         # When a default argument is given, it is returned when the attribute doesn't exist;
@@ -51,12 +51,12 @@ class PSPNet(nn.Module):
         self.drop_1 = nn.Dropout2d(p=0.3) #Dropout是将任意一个元素置零，2d将一个1×n置零，3d将1×n×m置零
         
         self.up_1 = PSPUpsample(1024,256)
-        self.up_2 = PSPUpsample(256,64)
-        self.up_3 = PSPUpsample(64,64)
+        self.up_2 = PSPUpsample(256,128)
+        self.up_3 = PSPUpsample(128,128)
         self.drop_2 = nn.Dropout2d(p=0.15)
         
         self.final = nn.Sequential(
-            nn.Conv2d(64,32,kernel_size=1),
+            nn.Conv2d(128,64,kernel_size=1),
             nn.LogSoftmax()
         )
         # self.classifier = nn.Sequential(
@@ -66,7 +66,7 @@ class PSPNet(nn.Module):
         # )
     
     def forward(self,img):
-        imgFeat, class_confidence = self.resnet18(img)
+        imgFeat, class_confidence = self.resnet(img)
         pspTotalFeat = self.pspFeatGetFusion(imgFeat)
 
         pspTotalFeat = self.drop_1(pspTotalFeat)

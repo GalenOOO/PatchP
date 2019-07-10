@@ -10,7 +10,7 @@ import random
 
 
 class PoseDataset(data.Dataset):
-    def __init__(self, mode, num, add_noise, root, noise_trans, refine):
+    def __init__(self, mode, pooledImgSize, add_noise, root, noise_trans, refine):
         self.objlist = [1,2,4,5,6,8,9,10,11,12,13,14,15]
         self.mode = mode
 
@@ -25,7 +25,8 @@ class PoseDataset(data.Dataset):
         self.root = root
         self.noise_trans = noise_trans
         self.refine = refine
-        self.num = num
+        self.numOfChoosedPoints = pooledImgSize * pooledImgSize
+        self.pooledImgSize = pooledImgSize
         self.add_noise = add_noise
 
         item_count = 0
@@ -116,37 +117,52 @@ class PoseDataset(data.Dataset):
         
 
         choose = mask[rmin:rmax,cmin:cmax].flatten().nonzero()[0]#是将bbox中的非0的像素索引（一维）保存
-
+        # print('>>>>>>>>----------pixels not equal to 0 :  {0} ---------<<<<<<<<'.format(len(choose)))
+        
+        # 新加代码，实现将不规则物体规则化
+        # #****************************----start-----******************************************
+        # 选点
         if len(choose) == 0:
             cc = torch.LongTensor([0])
             return(cc,cc,cc,cc,cc,cc)
-
-        if len(choose) > self.num:
+        if len(choose) > self.numOfChoosedPoints:
             c_mask = np.zeros(len(choose),dtype=int)
-            c_mask[:self.num] = 1
+            c_mask[:self.numOfChoosedPoints] = 1
             np.random.shuffle(c_mask)
             choose = choose[c_mask.nonzero()]
         else:
-            choose = np.pad(choose,(0,self.num - len(choose)), 'wrap') # [0,1,2,3] pad(a,(1,5),'wrap') [3,  0,1,2,3  ,0,1,2,3,0]
+            choose = np.pad(choose,(0,self.numOfChoosedPoints - len(choose)), 'wrap') 
         
+        #计算选择的点的点云坐标        
         depth_masked = depth[rmin:rmax,cmin:cmax].flatten()[choose][:,np.newaxis].astype(np.float32)
         xmap_masked = self.xmap[rmin:rmax,cmin:cmax].flatten()[choose][:,np.newaxis].astype(np.float32)#mask区域的点的行数
         ymap_masked = self.ymap[rmin:rmax,cmin:cmax].flatten()[choose][:,np.newaxis].astype(np.float32)#mask区域的点的列数
-        choose = np.array([choose])
-
         cam_scale = 1.0
         # 将深度图转化为点云，计算依据是坐标的变换关系（点云坐标是相机坐标系下的坐标）
         pt2 = depth_masked / cam_scale # 点云的z
         pt0 = (ymap_masked - self.cam_cx) * pt2 / self.cam_fx #点云的x
         pt1 = (xmap_masked - self.cam_cy) * pt2 / self.cam_fy #点云的y
-
-        cloud = np.concatenate((pt0, pt1, pt2),axis = 1) #cloud self.num行，3列
+        cloud = np.concatenate((pt0, pt1, pt2),axis = 1) #cloud self.numOfChoosedPoints行，3列
         cloud = np.add(cloud, -1.0*target_t) / 1000.0
         cloud = np.add(cloud, target_t/1000.0) #将单位由毫米换成米
 
         add_t = np.array([random.uniform(-self.noise_trans,self.noise_trans) for i in range(3)])
         if self.add_noise:
             cloud = np.add(cloud,add_t)
+
+        img_masked = self.norm(torch.from_numpy(img_masked.astype(np.float32)))
+        img_masked = img_masked.numpy()
+        img_c0 = img_masked[0,:,:].flatten()[choose][:,np.newaxis].astype(np.float32)
+        img_c1 = img_masked[1,:,:].flatten()[choose][:,np.newaxis].astype(np.float32)
+        img_c2 = img_masked[2,:,:].flatten()[choose][:,np.newaxis].astype(np.float32)
+        img_choose = np.concatenate((img_c0, img_c1, img_c2),axis = 1) #self.numOfChoosedPoints行，3列
+        self.norm(torch.from_numpy(img_masked.astype(np.float32)))
+
+        img_cloud = np.concatenate((img_choose, cloud),axis = 1) #self.numOfChoosedPoints行，6列
+        img_cloud = np.transpose(img_cloud, (1, 0))
+        img_cloud = img_cloud.reshape(6,self.pooledImgSize,self.pooledImgSize)
+
+        #****************************----end-----******************************************
         
         model_points = self.pt[obj] / 1000.0
         dellist = [j for j in range(0, len(model_points))]
@@ -159,14 +175,23 @@ class PoseDataset(data.Dataset):
             out_t = target_t / 1000.0 + add_t
         else:
             target = np.add(target, target_t / 1000.0)
-            out_t = target_t / 1000.0 
+            out_t = target_t / 1000.0
         
-        return self.norm(torch.from_numpy(img_masked.astype(np.float32))),\
+        return torch.from_numpy(img_cloud.astype(np.float32)),\
                torch.from_numpy(cloud.astype(np.float32)), \
-               torch.LongTensor(choose.astype(np.int32)), \
                torch.from_numpy(target.astype(np.float32)), \
                torch.from_numpy(model_points.astype(np.float32)), \
-               torch.LongTensor([self.objlist.index(obj)]) # 返回obj位于objlist的哪个位置
+               torch.LongTensor([self.objlist.index(obj)]),\
+               ori_img
+        
+        # return self.norm(torch.from_numpy(img_masked.astype(np.float32))),\
+        #        torch.from_numpy(cloud.astype(np.float32)), \
+        #        torch.LongTensor(choose.astype(np.int32)), \
+        #        torch.from_numpy(target.astype(np.float32)), \
+        #        torch.from_numpy(model_points.astype(np.float32)), \
+        #        torch.LongTensor([self.objlist.index(obj)]),\
+        #        ori_img
+                   # torch.LongTensor([self.objlist.index(obj)])返回obj位于objlist的哪个位置
 
     def __len__(self):
         return self.length

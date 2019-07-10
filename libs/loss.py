@@ -24,11 +24,12 @@ def loss_calculation(pred_r,pred_t,pred_c,targetCloud, modelPoints,idx,cloud,w,r
     modelPoints = modelPoints.view(bs,1,num_pt_mesh,3).repeat(1,num_p,1,1).view(bs*num_p, num_pt_mesh,3)
     targetCloud = targetCloud.view(bs,1,num_pt_mesh,3).repeat(1,num_p,1,1).view(bs*num_p, num_pt_mesh,3)
     ori_tarCloud = targetCloud
-    cloud = cloud.contiguous().view(bs*num_p,1,3)
+    cloud = cloud.contiguous().view(-1,1,3)
     pred_c = pred_c.contiguous().view(bs * num_p)
 
     rMat = rMat.contiguous().transpose(2,1).contiguous() #这里为什么转置？正常来讲，是rMat×point，而在下面计算预测值时，由于有很多point，所以采用了point×rMat
-    predCloud = torch.add(torch.bmm(modelPoints,rMat),cloud+pred_t) #####  训练的t就是对每个点的补偿值，所以加上cloud（可考虑将Cloud删除进行测试）[改进]
+    # predCloud = torch.add(torch.bmm(modelPoints,rMat),cloud+pred_t) #####  训练的t就是对每个点的补偿值，所以加上cloud（可考虑将Cloud删除进行测试）[改进]
+    predCloud = torch.add(torch.bmm(modelPoints,rMat),pred_t) #####  训练的t就是对每个点的补偿值，所以加上cloud（Cloud已删除进行测试）[改进]
     # torch.bmm(batch1, batch2, out=None) → Tensor 
     # If batch1 is a (b×n×m) tensor, batch2 is a (b×m×p) tensor, out will be a (b×n×p) tensor.
 
@@ -48,11 +49,13 @@ def loss_calculation(pred_r,pred_t,pred_c,targetCloud, modelPoints,idx,cloud,w,r
     how_max, which_max = torch.max(pred_c,1)
     dis = dis.view(bs,num_p)
 
-    t = ori_tMat[which_max[0]] + cloud[which_max[0]] #对应前面t是每个点的补偿值 [1,3]
-    cloud = cloud.view(1,bs*num_p,3)
+    t = ori_tMat[which_max[0]] #+ cloud[which_max[0]] #对应前面t是每个点的补偿值 [1,3]
+    cloud = cloud.view(1,-1,3)
+    _ , numPoints, _ = cloud.size() 
 
     ori_rMat = ori_rMat[which_max[0]].view(1,3,3).contiguous() #[1,3,3]
-    ori_tMat = t.repeat(bs*num_p,1).contiguous().view(1,bs * num_p,3)
+    ori_tMat = t.repeat(numPoints,1).contiguous().view(1,numPoints,3)
+    # newPoints = torch.bmm((cloud-ori_tMat),ori_rMat).contiguous()  #新的点云相当于做了 所预测的位姿的齐次变换的 逆变换（如果预测的位姿完全正确的话，物体坐标系会和相机坐标系重合）
     newPoints = torch.bmm((cloud-ori_tMat),ori_rMat).contiguous()  #新的点云相当于做了 所预测的位姿的齐次变换的 逆变换（如果预测的位姿完全正确的话，物体坐标系会和相机坐标系重合）
     #这里乘ori_rMat,其实是(ori_rMat.T.T) 第一个.T表示逆矩阵，第二个是因为点在左边，变换矩阵在右边，所以变换矩阵要转置一下
     newTarCloud = ori_tarCloud[0].view(1, num_pt_mesh, 3).contiguous()

@@ -21,9 +21,11 @@ def loss_calculation(pred_r,pred_t,pred_c,targetCloud, modelPoints,idx,cloud,w,r
     ori_rMat = rMat
     pred_t = pred_t.contiguous().view(bs*num_p,1,3)
     ori_tMat = pred_t
+
     modelPoints = modelPoints.view(bs,1,num_pt_mesh,3).repeat(1,num_p,1,1).view(bs*num_p, num_pt_mesh,3)
     targetCloud = targetCloud.view(bs,1,num_pt_mesh,3).repeat(1,num_p,1,1).view(bs*num_p, num_pt_mesh,3)
     ori_tarCloud = targetCloud
+    
     cloud = cloud.contiguous().view(-1,1,3)
     pred_c = pred_c.contiguous().view(bs * num_p)
 

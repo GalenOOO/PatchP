@@ -27,17 +27,18 @@ opt = parser.parse_args()
 numObjects = 13
 objList = [1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15]
 numPoints = 500
+pooledImgSize = 48
 batchSize = 1
 datasetConfigDir = '/home/galen/deepLearning/poseEstimation/DenseFusion/datasets/linemod/Linemod_preprocessed/models/'
 output_result_dir = 'experimentResult/eval_results/linemod'
 knn = KNearestNeighbor(1)
 
-estimator = poseNet(numPoints,numObjects)
+estimator = poseNet(pooledImgSize,numObjects)
 estimator.cuda()
 estimator.load_state_dict(torch.load(opt.model))
 estimator.eval()
 
-testDataset = PoseDataset('eval',numPoints,False,opt.datasetRoot,0.0,True)
+testDataset = PoseDataset('eval',pooledImgSize,False,opt.datasetRoot,0.0,True)
 testDataLoader = torch.utils.data.DataLoader(testDataset,batch_size=1,shuffle=False, num_workers=10)
 
 symList = testDataset.get_sym_list()
@@ -57,26 +58,27 @@ numCount = [0 for i in range(numObjects)]
 fw = open('{0}/eval_result_logs.txt'.format(output_result_dir),'w')
 
 for i,data in enumerate(testDataLoader, 0):
-    img, cloud, choose, tarPoints, modelPoints, idx = data
+    img_cloud, cloud, tarPoints, modelPoints, idx, ori_img = data
+    ori_img = np.array(ori_img)
     if len(cloud.size()) == 2:
         print('No.{0} NOT Pass! Lost detection!'.format(i))
         fw.write('No.{0} NOT Pass! Lost detection!\n'.format(i))
         continue
-    img = Variable(img).cuda()
+    img_cloud = Variable(img_cloud).cuda()
     cloud = Variable(cloud).cuda()
-    choose = Variable(choose).cuda()
     tarPoints = Variable(tarPoints).cuda()
     modelPoints = Variable(modelPoints).cuda()
     idx = Variable(idx).cuda()
-    pred_r, pred_t, pred_c, colorEmb = estimator(img,cloud,choose,idx)
-
-    pred_r = pred_r / (torch.norm(pred_r, dim=2).view(1, numPoints, 1))
-    pred_c = pred_c.view(batchSize, numPoints)
+    pred_r, pred_t, pred_c, colorEmb = estimator(img_cloud,idx)
+    bs, num_p,_ = pred_c.size()
+    pred_r = pred_r / (torch.norm(pred_r, dim=2).view(1, num_p, 1))
+    pred_c = pred_c.view(batchSize, num_p)
     how_max, which_max = torch.max(pred_c, 1)
-    pred_t = pred_t.view(batchSize*numPoints,1,3)
+    pred_t = pred_t.view(batchSize*num_p,1,3)
 
     my_r = pred_r[0][which_max[0]].view(-1).cpu().data.numpy()
-    my_t = (cloud.view(batchSize * numPoints, 1, 3) + pred_t)[which_max[0]].view(-1).cpu().data.numpy()
+    # my_t = (cloud.view(batchSize * num_p, 1, 3) + pred_t)[which_max[0]].view(-1).cpu().data.numpy()
+    my_t =  pred_t[which_max[0]].view(-1).cpu().data.numpy()
     my_pred = np.append(my_r, my_t)
 
     modelPoints = modelPoints[0].cpu().detach().numpy()

@@ -71,6 +71,7 @@ class PoseDataset(data.Dataset):
 
         self.transcolor = transforms.ColorJitter(0.2,0.2,0.2,0.05)
         self.norm = transforms.Normalize(mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225])
+        # self.norm = transforms.Normalize(mean=[0.485,0.456,0.406,0.485,0.456,0.406], std=[0.229,0.224,0.225,0.229,0.224,0.225])
         self.border_list = [-1, 40, 80, 120, 160, 200, 240, 280, 320, 360, 400, 440, 480, 520, 560, 600, 640, 680]
         self.num_pt_mesh_large = 500
         self.num_pt_mesh_small = 500
@@ -156,7 +157,7 @@ class PoseDataset(data.Dataset):
         img_c1 = img_masked[1,:,:].flatten()[choose][:,np.newaxis].astype(np.float32)
         img_c2 = img_masked[2,:,:].flatten()[choose][:,np.newaxis].astype(np.float32)
         img_choose = np.concatenate((img_c0, img_c1, img_c2),axis = 1) #self.numOfChoosedPoints行，3列
-        self.norm(torch.from_numpy(img_masked.astype(np.float32)))
+        # self.norm(torch.from_numpy(img_masked.astype(np.float32)))
 
         img_cloud = np.concatenate((img_choose, cloud),axis = 1) #self.numOfChoosedPoints行，6列
         img_cloud = np.transpose(img_cloud, (1, 0))
@@ -177,6 +178,7 @@ class PoseDataset(data.Dataset):
             target = np.add(target, target_t / 1000.0)
             out_t = target_t / 1000.0
         
+        # return self.norm(torch.from_numpy(img_cloud.astype(np.float32))),\
         return torch.from_numpy(img_cloud.astype(np.float32)),\
                torch.from_numpy(cloud.astype(np.float32)), \
                torch.from_numpy(target.astype(np.float32)), \

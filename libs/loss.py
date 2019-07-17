@@ -6,6 +6,7 @@ from libs.knn.__init__ import KNearestNeighbor
 def loss_calculation(pred_r,pred_t,pred_c,targetCloud, modelPoints,idx,cloud,w,refine,num_pt_mesh,symList):
     knn = KNearestNeighbor(1)
     bs, num_p,_ = pred_c.size()
+    # print(pred_r.size())
 
     pred_r = pred_r / (torch.norm(pred_r,dim=2).view(bs,num_p,1))
     # 将四元数转换成旋转矩阵 
@@ -31,7 +32,8 @@ def loss_calculation(pred_r,pred_t,pred_c,targetCloud, modelPoints,idx,cloud,w,r
 
     rMat = rMat.contiguous().transpose(2,1).contiguous() #这里为什么转置？正常来讲，是rMat×point，而在下面计算预测值时，由于有很多point，所以采用了point×rMat
     # predCloud = torch.add(torch.bmm(modelPoints,rMat),cloud+pred_t) #####  训练的t就是对每个点的补偿值，所以加上cloud（可考虑将Cloud删除进行测试）[改进]
-    predCloud = torch.add(torch.bmm(modelPoints,rMat),pred_t) #####  训练的t就是对每个点的补偿值，所以加上cloud（Cloud已删除进行测试）[改进]
+    temp = torch.bmm(modelPoints,rMat)
+    predCloud = torch.add(temp,pred_t) #####  训练的t就是对每个点的补偿值，所以加上cloud（Cloud已删除进行测试）[改进]
     # torch.bmm(batch1, batch2, out=None) → Tensor 
     # If batch1 is a (b×n×m) tensor, batch2 is a (b×m×p) tensor, out will be a (b×n×p) tensor.
 

@@ -3,6 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
+# def conv3x3(in_channels,out_channels,stride=1,dilation = 1):
+#     return nn.Conv2d(in_channels,out_channels,kernel_size=3 ,stride = stride,
+#                     padding=1,dilation=dilation,bias=False)
 def conv3x3(in_channels,out_channels,stride=1,dilation = 1):
     return nn.Conv2d(in_channels,out_channels,kernel_size=3 ,stride = stride,
                     padding=dilation,dilation=dilation,bias=False)
@@ -44,7 +47,8 @@ class ResNet(nn.Module):#整个resnet，将图像大小变为了原来的1/8
         self.inplanes = 64
         super(ResNet,self).__init__()
         self.pre = nn.Sequential(
-            nn.Conv2d(6,64,kernel_size=7,stride=2,padding=3,bias=False),
+            nn.Conv2d(3,64,kernel_size=7,stride=2,padding=3,bias=False),
+            # nn.Conv2d(6,64,kernel_size=3,stride=1,padding =1 ,bias=False),
             # nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -110,7 +114,7 @@ def resnet34(pretrained=False):
 #         super(ResidualBlock, self).__init__()
 #         self.left = nn.Sequential(
 #             nn.Conv2d(inchannel, outchannel, kernel_size=3, stride=stride, padding=1, bias=False),
-#             nn.BatchNorm2d(outchannel),
+#             # nn.BatchNorm2d(outchannel),
 #             nn.ReLU(inplace=True),
 #             nn.Conv2d(outchannel, outchannel, kernel_size=3, stride=1, padding=1, bias=False),
 #             nn.BatchNorm2d(outchannel)
@@ -119,7 +123,7 @@ def resnet34(pretrained=False):
 #         if stride != 1 or inchannel != outchannel:
 #             self.shortcut = nn.Sequential(
 #                 nn.Conv2d(inchannel, outchannel, kernel_size=1, stride=stride, bias=False),
-#                 nn.BatchNorm2d(outchannel)
+#                 # nn.BatchNorm2d(outchannel)
 #             )
 #     def forward(self, x):
 #         out = self.left(x)
@@ -132,8 +136,8 @@ def resnet34(pretrained=False):
 #         super(ResNet, self).__init__()
 #         self.inchannel = 64
 #         self.conv1 = nn.Sequential(
-#             nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False),
-#             nn.BatchNorm2d(64),
+#             nn.Conv2d(6, 64, kernel_size=3, stride=1, padding=1, bias=False),
+#             # nn.BatchNorm2d(64),
 #             nn.ReLU(),
 #         )
 #         self.layer1 = self.make_layer(ResidualBlock, 64,  2, stride=1)
@@ -154,13 +158,14 @@ def resnet34(pretrained=False):
 #         out = self.conv1(x)
 #         out = self.layer1(out)
 #         out = self.layer2(out)
-#         out = self.layer3(out)
-#         out = self.layer4(out)
-#         out = F.avg_pool2d(out, 4)
-#         out = out.view(out.size(0), -1)
-#         out = self.fc(out)
-#         return out
+#         out_c = self.layer3(out)
+#         out = self.layer4(out_c)
+#         # out = F.avg_pool2d(out, 4)
+#         # out = out.view(out.size(0), -1)
+#         # out = self.fc(out)
+#         return out,out_c
 
 
-# def ResNet18():
+# def resnet18(pretrained=False):
 #     return ResNet(ResidualBlock)
+

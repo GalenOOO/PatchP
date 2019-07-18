@@ -12,7 +12,7 @@ import torch.utils.data as data
 from torch.autograd import Variable
 
 from datasets.dataset import PoseDataset as PoseDataset
-from networks.network import poseNet,poseRefineNet
+from networks.network_bak import poseNet,poseRefineNet
 from libs.loss import Loss
 from tools.utils import setup_logger
 
@@ -45,7 +45,6 @@ def main():
     if opt.dataset == 'linemod':
         opt.numObjects = 13
         opt.numPoints = 500
-        opt.pooledImgSize = 48
         opt.repeatEpoch = 20
         opt.modelFolder = 'trainedModels/'
         opt.logFolder = 'experimentResult/logs/'
@@ -53,9 +52,8 @@ def main():
         print('Unknown dataset')
         return
 
-
     # 定义网络，如果有训练过的模型，可加载；   确定网络优化方法    
-    estimator = poseNet(opt.pooledImgSize, opt.numObjects)
+    estimator = poseNet(opt.numPoints, opt.numObjects)
     estimator.cuda() # or estimator.to('cuda')
     if opt.resumePosenet != '':
         estimator.load_state_dict(torch.load('{0}/{1}'.format(opt.modelFolder,opt.resumePosenet)))
@@ -66,8 +64,8 @@ def main():
     opt.refine_start = False
     # 加载训练数据和测试数据
     if opt.dataset == 'linemod':
-        dataset = PoseDataset('train', opt.pooledImgSize, opt.addNoise, opt.datasetRoot, opt.noiseTrans, opt.refine_start)
-        test_dataset = PoseDataset('test', opt.pooledImgSize, False, opt.datasetRoot, 0.0, opt.refine_start)
+        dataset = PoseDataset('train', opt.numPoints, opt.addNoise, opt.datasetRoot, opt.noiseTrans, opt.refine_start)
+        test_dataset = PoseDataset('test', opt.numPoints, False, opt.datasetRoot, 0.0, opt.refine_start)
     dataLoader = torch.utils.data.DataLoader(dataset,batch_size=1, shuffle=True, num_workers=opt.workers)
     testdataLoader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.workers)
     opt.symList = dataset.get_sym_list()
@@ -94,16 +92,16 @@ def main():
         optimizer.zero_grad()
         for rep in range(opt.repeatEpoch):
             for i,data in enumerate(dataLoader,0):
-                img_cloud, cloud, tarPoints, modelPoints, idx, ori_img = data
+                img, cloud, tarPoints, modelPoints, idx, ori_img = data
                 
-                img_cloud = Variable(img_cloud).cuda()
+                img = Variable(img).cuda()
                 cloud = Variable(cloud).cuda()
                 tarPoints = Variable(tarPoints).cuda()
                 modelPoints = Variable(modelPoints).cuda()
                 idx = Variable(idx).cuda()
                 ori_img = np.array(ori_img)
 
-                pred_r, pred_t, pred_c, colorEmb = estimator(img_cloud,idx)
+                pred_r, pred_t, pred_c, colorEmb = estimator(img,cloud,idx)
                 loss , dis, newCloud, newTarPoints = poseNetLoss(pred_r,pred_t,pred_c,tarPoints,modelPoints,idx,cloud,opt.w,opt.refine_start)
 
                 loss.backward()
@@ -128,16 +126,16 @@ def main():
         test_count = 0
         estimator.eval()
         for j,data in enumerate(testdataLoader,0):
-            img_cloud, cloud, tarPoints, modelPoints, idx, ori_img = data
+            img, cloud, tarPoints, modelPoints, idx, ori_img = data
                 
-            img_cloud = Variable(img_cloud).cuda()
+            img = Variable(img).cuda()
             cloud = Variable(cloud).cuda()
             tarPoints = Variable(tarPoints).cuda()
             modelPoints = Variable(modelPoints).cuda()
             idx = Variable(idx).cuda()
             ori_img = np.array(ori_img)
 
-            pred_r, pred_t, pred_c, colorEmb = estimator(img_cloud,idx)
+            pred_r, pred_t, pred_c, colorEmb = estimator(img,cloud,idx)
             loss , dis, newCloud, newTarPoints = poseNetLoss(pred_r,pred_t,pred_c,tarPoints,modelPoints,idx,cloud,opt.w,opt.refine_start)
 
             logger.info('Test time {0} Test Frame No.{1} dis:{2}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), test_count, dis))

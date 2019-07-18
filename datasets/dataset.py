@@ -10,7 +10,7 @@ import random
 
 
 class PoseDataset(data.Dataset):
-    def __init__(self, mode, pooledImgSize, add_noise, root, noise_trans, refine):
+    def __init__(self, mode, num, add_noise, root, noise_trans, refine):
         self.objlist = [1,2,4,5,6,8,9,10,11,12,13,14,15]
         self.mode = mode
 
@@ -25,8 +25,7 @@ class PoseDataset(data.Dataset):
         self.root = root
         self.noise_trans = noise_trans
         self.refine = refine
-        self.numOfChoosedPoints = pooledImgSize * pooledImgSize
-        self.pooledImgSize = pooledImgSize
+        self.numPoints = num
         self.add_noise = add_noise
 
         item_count = 0
@@ -126,13 +125,13 @@ class PoseDataset(data.Dataset):
         if len(choose) == 0:
             cc = torch.LongTensor([0])
             return(cc,cc,cc,cc,cc,cc)
-        if len(choose) > self.numOfChoosedPoints:
+        if len(choose) > self.numPoints:
             c_mask = np.zeros(len(choose),dtype=int)
-            c_mask[:self.numOfChoosedPoints] = 1
+            c_mask[:self.numPoints] = 1
             np.random.shuffle(c_mask)
             choose = choose[c_mask.nonzero()]
         else:
-            choose = np.pad(choose,(0,self.numOfChoosedPoints - len(choose)), 'wrap') 
+            choose = np.pad(choose,(0,self.numPoints - len(choose)), 'wrap') 
         
         #计算选择的点的点云坐标        
         depth_masked = depth[rmin:rmax,cmin:cmax].flatten()[choose][:,np.newaxis].astype(np.float32)
@@ -143,7 +142,7 @@ class PoseDataset(data.Dataset):
         pt2 = depth_masked / cam_scale # 点云的z
         pt0 = (ymap_masked - self.cam_cx) * pt2 / self.cam_fx #点云的x
         pt1 = (xmap_masked - self.cam_cy) * pt2 / self.cam_fy #点云的y
-        cloud = np.concatenate((pt0, pt1, pt2),axis = 1) #cloud self.numOfChoosedPoints行，3列
+        cloud = np.concatenate((pt0, pt1, pt2),axis = 1) #cloud self.numPoints行，3列
         cloud = np.add(cloud, -1.0*target_t) / 1000.0
         cloud = np.add(cloud, target_t/1000.0) #将单位由毫米换成米
 
@@ -156,12 +155,12 @@ class PoseDataset(data.Dataset):
         img_c0 = img_masked[0,:,:].flatten()[choose][:,np.newaxis].astype(np.float32)
         img_c1 = img_masked[1,:,:].flatten()[choose][:,np.newaxis].astype(np.float32)
         img_c2 = img_masked[2,:,:].flatten()[choose][:,np.newaxis].astype(np.float32)
-        img_choose = np.concatenate((img_c0, img_c1, img_c2),axis = 1) #self.numOfChoosedPoints行，3列
+        img_choose = np.concatenate((img_c0, img_c1, img_c2),axis = 1) #self.numPoints行，3列
         # self.norm(torch.from_numpy(img_masked.astype(np.float32)))
 
-        img_cloud = np.concatenate((img_choose, cloud),axis = 1) #self.numOfChoosedPoints行，6列
-        img_cloud = np.transpose(img_cloud, (1, 0))
-        img_cloud = img_cloud.reshape(6,self.pooledImgSize,self.pooledImgSize)
+        # img_cloud = np.concatenate((img_choose, cloud),axis = 1) #self.numOfChoosedPoints行，6列
+        # img_cloud = np.transpose(img_cloud, (1, 0))
+        # img_cloud = img_cloud.reshape(6,self.pooledImgSize,self.pooledImgSize)
 
         #****************************----end-----******************************************
         
@@ -179,7 +178,7 @@ class PoseDataset(data.Dataset):
             out_t = target_t / 1000.0
         
         # return self.norm(torch.from_numpy(img_cloud.astype(np.float32))),\
-        return torch.from_numpy(img_cloud.astype(np.float32)),\
+        return torch.from_numpy(img_choose.astype(np.float32)),\
                torch.from_numpy(cloud.astype(np.float32)), \
                torch.from_numpy(target.astype(np.float32)), \
                torch.from_numpy(model_points.astype(np.float32)), \

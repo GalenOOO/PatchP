@@ -35,7 +35,7 @@ class featureFusionNet(nn.Module):
 
         self.getGlobalFeat = nn.AvgPool1d(num_points)
         
-    def forward(self,cloud,colorEmb):
+    def forward(self,colorEmb,cloud):
         cloudFeat1 = F.relu(self.cloudConv1(cloud))
         colorFeat1 = F.relu(self.colorConv1(colorEmb))
         catFeat1 = torch.cat((cloudFeat1,colorFeat1), dim=1) #64+64=128dim
@@ -48,9 +48,10 @@ class featureFusionNet(nn.Module):
         fusionFeat = F.relu(self.featConv2(fusionFeat))
 
         globalFeat = self.getGlobalFeat(fusionFeat) #globalFeat: bs*1024*1
-        globalFeat = globalFeat.view(-1,1024,1).repeat(1,1,self.num_points)
+        globalFeat = globalFeat.view(-1,1024)
+        # globalFeat = globalFeat.view(-1,1024,1).repeat(1,1,self.num_points)
         # 返回结果是bs×1408×num_points维的变量
-        return torch.cat([catFeat1,catFeat2,globalFeat],dim=1)#128 + 256 + 1024
+        return torch.cat([catFeat1,catFeat2],dim=1),globalFeat #128 + 256, 1024
 
 class featureExtraction(nn.Module):
     def __init__(self,pooledImgSize):
@@ -76,77 +77,73 @@ class featureExtraction(nn.Module):
 
 
 class poseNet(nn.Module): #必须继承nn.Module
-    def __init__(self,pooledImgSize, num_obj): 
+    def __init__(self,num_points, num_obj): 
         super(poseNet, self).__init__() #需要调用父类的构造方法
-        self.pooledImgSize = pooledImgSize
+        self.num_points = num_points
         self.num_obj = num_obj
-        self.kerSize = 1 # 考虑调整这个核的大小
         # 网络结构定义
         self.bodyCNN = modifiedResNet()
-        self.feat = featureExtraction(pooledImgSize)
+        self.feat = featureFusionNet(num_points)
 
         self.Rconv0 = nn.Linear(1024,512)
         self.tconv0 = nn.Linear(1024,512)
         self.cconv0 = nn.Linear(1024,512)
 
-        self.conv1_r = nn.Conv1d(1024,512,3)
-        self.conv1_t = nn.Conv1d(1024,512,3)
-        self.conv1_c = nn.Conv1d(1024,512,3)
-        #----------以下这一段略作修改，只使用patchFeat，不使用globalFeat
-        self.conv2_r = nn.Conv1d(512,256,self.kerSize)
-        self.conv2_t = nn.Conv1d(512,256,self.kerSize)
-        self.conv2_c = nn.Conv1d(512,256,self.kerSize)
-        #----------------------
-        self.conv3_r = nn.Conv1d(256,128,self.kerSize)
-        self.conv3_t = nn.Conv1d(256,128,self.kerSize)
-        self.conv3_c = nn.Conv1d(256,128,self.kerSize)
+        self.Rconv1 = nn.Linear(512,128)
+        self.tconv1 = nn.Linear(512,128)
+        self.cconv1 = nn.Linear(512,128)
 
-        self.conv4_r = nn.Conv1d(128,num_obj*4,self.kerSize) #四元数
-        self.conv4_t = nn.Conv1d(128,num_obj*3,self.kerSize)
-        self.conv4_c = nn.Conv1d(128,num_obj*1,self.kerSize)
 
-    def forward(self, img_cloud, obj):
-        colorFeat = self.bodyCNN(img_cloud) #colorFeat的di应该是32。大小和输入的img一样
+        self.conv1_r = nn.Conv1d(384,512,3,3)
+        self.conv1_t = nn.Conv1d(384,512,3,3)
+        self.conv1_c = nn.Conv1d(384,512,3,3)
+
+        self.conv2_r = nn.Conv1d(512,256,3,3)
+        self.conv2_t = nn.Conv1d(512,256,3,3)
+        self.conv2_c = nn.Conv1d(512,256,3,3)
+
+        self.conv3_r = nn.Conv1d(256,128,4)
+        self.conv3_t = nn.Conv1d(256,128,4)
+        self.conv3_c = nn.Conv1d(256,128,4)
+
+        self.conv4_r = nn.Conv1d(256,num_obj*4,1) #四元数
+        self.conv4_t = nn.Conv1d(256,num_obj*3,1)
+        self.conv4_c = nn.Conv1d(256,num_obj*1,1)
+
+    def forward(self, img, cloud, choose, obj):
+        colorFeat = self.bodyCNN(img) #colorFeat的di应该是32。大小和输入的img一样
         bs, di, _, _ = colorFeat.size()
-        # colorEmb = colorFeat.view(bs,di,-1)#将二维变成一维
-        # choose = choose.repeat(1,di,1) #choose本是bs×1×n，经此操作变成bs×di×n；如果是（2，di，3），则2×di×3n
-        # colorEmb = torch.gather(colorEmb, 2, choose).contiguous() 
-        # # 根据choose挑选出和深度图（点云）对应的彩色图提取的特征，contiguous()将数据在内存中的表示连续化
-        # # 现在colorEmb的尺寸应是bs，di，n（n对应于num_points)
+        colorEmb = colorFeat.view(bs,di,-1)#将二维变成一维
+        choose = choose.repeat(1,di,1) #choose本是bs×1×n，经此操作变成bs×di×n；如果是（2，di，3），则2×di×3n
+        colorEmb = torch.gather(colorEmb, 2, choose).contiguous() 
+        # 根据choose挑选出和深度图（点云）对应的彩色图提取的特征，contiguous()将数据在内存中的表示连续化
+        # 现在colorEmb的尺寸应是bs，di，n（n对应于num_points)
 
         # # gather操作，gather(input,dim,index),要求input和index的维的数量相同，且除了dim指定的维外，其他维的长度应相同。
         # # input : torch.Size([1,2,3])  都是三维，除dim=2长度不同外，其他都相同，结果和较短的相同
         # # index : torch.Size([1,2,2])
         # # result : torch.Size([1,2,2])
 
-        # cloud = cloud.transpose(2,1).contiguous() 
-        # #cloud原始size：(batchSize，num_points,3) 执行完之后，变为（bs，3，num_points),和colorEmb统一了
-        denseFeature, globalFeat = self.feat(colorFeat) 
+        cloud = cloud.transpose(2,1).contiguous() 
+        #cloud原始size：(batchSize，num_points,3) 执行完之后，变为（bs，3，num_points),和colorEmb统一了
+        denseFeature, globalFeat = self.feat(colorEmb,cloud) 
         # denseFeature bs* 1024dim * (pooledImgSize * pooledImgSize)
         # globalFeat: bs*1024*1
-        denseFeature = denseFeature.view(bs,1024,-1)
+        denseFeature = denseFeature.view(bs,384,-1)
         #------------%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%---------------------
         # 融合globalFeat 和 patchFeat
-        # rx_g = F.relu(self.Rconv0(globalFeat))
-        # tx_g = F.relu(self.tconv0(globalFeat))
-        # cx_g = F.relu(self.cconv0(globalFeat))
+        rx_g = F.relu(self.Rconv0(globalFeat))
+        tx_g = F.relu(self.tconv0(globalFeat))
+        cx_g = F.relu(self.cconv0(globalFeat))
+
+        rx_g = F.relu(self.Rconv1(rx_g))
+        tx_g = F.relu(self.tconv1(tx_g))
+        cx_g = F.relu(self.cconv1(cx_g))
 
         rx = F.relu(self.conv1_r(denseFeature)) #dim = 512
         tx = F.relu(self.conv1_t(denseFeature)) #dim = 512
         cx = F.relu(self.conv1_c(denseFeature)) #dim = 512
-
-        # _, dimensions, numPatchs =  cx.size()
-        # rx_g = rx_g.view(-1,512,1).repeat(1,1,numPatchs)#dim = 512
-        # tx_g = rx_g.view(-1,512,1).repeat(1,1,numPatchs)
-        # cx_g = rx_g.view(-1,512,1).repeat(1,1,numPatchs)
-
         
-        # rx = torch.cat([rx,rx_g],dim=1)  #dim = 512 + 512 = 1024
-        # tx = torch.cat([tx,tx_g],dim=1)
-        # cx = torch.cat([cx,cx_g],dim=1)
-        #------------%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%---------------------
-
-
         rx = F.relu(self.conv2_r(rx))
         tx = F.relu(self.conv2_t(tx))
         cx = F.relu(self.conv2_c(cx))
@@ -154,6 +151,17 @@ class poseNet(nn.Module): #必须继承nn.Module
         rx = F.relu(self.conv3_r(rx))
         tx = F.relu(self.conv3_t(tx))
         cx = F.relu(self.conv3_c(cx))
+
+        _, dimensions, numPatchs =  cx.size()
+        rx_g = rx_g.view(-1,128,1).repeat(1,1,numPatchs)#dim = 512
+        tx_g = tx_g.view(-1,128,1).repeat(1,1,numPatchs)
+        cx_g = cx_g.view(-1,128,1).repeat(1,1,numPatchs)
+
+        
+        rx = torch.cat([rx,rx_g],dim=1)  #dim = 128 + 128 = 256
+        tx = torch.cat([tx,tx_g],dim=1)
+        cx = torch.cat([cx,cx_g],dim=1)
+        #------------%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%---------------------       
 
         rx = self.conv4_r(rx).view(bs,self.num_obj,4,-1)
         tx = self.conv4_t(tx).view(bs,self.num_obj,3,-1)

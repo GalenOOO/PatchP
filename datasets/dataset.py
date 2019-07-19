@@ -76,6 +76,8 @@ class PoseDataset(data.Dataset):
         self.num_pt_mesh_small = 500
         self.symmetry_obj_idx = [7, 8]
 
+        self.patch_num = 16
+
     def __getitem__(self, index):
         img = Image.open(self.list_rgb[index])
         ori_img = np.array(img)
@@ -119,19 +121,25 @@ class PoseDataset(data.Dataset):
         choose = mask[rmin:rmax,cmin:cmax].flatten().nonzero()[0]#是将bbox中的非0的像素索引（一维）保存
         # print('>>>>>>>>----------pixels not equal to 0 :  {0} ---------<<<<<<<<'.format(len(choose)))
         
-        # 新加代码，实现将不规则物体规则化
         # #****************************----start-----******************************************
-        # 选点
-        if len(choose) == 0:
-            cc = torch.LongTensor([0])
-            return(cc,cc,cc,cc,cc,cc)
-        if len(choose) > self.numPoints:
-            c_mask = np.zeros(len(choose),dtype=int)
-            c_mask[:self.numPoints] = 1
-            np.random.shuffle(c_mask)
-            choose = choose[c_mask.nonzero()]
-        else:
-            choose = np.pad(choose,(0,self.numPoints - len(choose)), 'wrap') 
+        # # 选点
+        # if len(choose) == 0:
+        #     cc = torch.LongTensor([0])
+        #     return(cc,cc,cc,cc,cc,cc)
+        # if len(choose) > self.numPoints:
+        #     c_mask = np.zeros(len(choose),dtype=int)
+        #     c_mask[:self.numPoints] = 1
+        #     np.random.shuffle(c_mask)
+        #     choose = choose[c_mask.nonzero()]
+        # else:
+        #     choose = np.pad(choose,(0,self.numPoints - len(choose)), 'wrap') 
+        c_mask = np.zeros(len(choose),dtype=int)
+        c_mask[:self.patch_num] = 1
+        np.random.shuffle(c_mask)
+        patch_seeds = c_mask.nonzero()
+        # print('len(choose): ',len(choose))
+        # print('len(patch_seeds): ',len(patch_seeds))
+        # print(patch_seeds)
         
         #计算选择的点的点云坐标        
         depth_masked = depth[rmin:rmax,cmin:cmax].flatten()[choose][:,np.newaxis].astype(np.float32)
@@ -143,21 +151,30 @@ class PoseDataset(data.Dataset):
         pt0 = (ymap_masked - self.cam_cx) * pt2 / self.cam_fx #点云的x
         pt1 = (xmap_masked - self.cam_cy) * pt2 / self.cam_fy #点云的y
         cloud = np.concatenate((pt0, pt1, pt2),axis = 1) #cloud self.numPoints行，3列
-        cloud = np.add(cloud, -1.0*target_t) / 1000.0
-        cloud = np.add(cloud, target_t/1000.0) #将单位由毫米换成米
+
+
+        index = choose[:,np.newaxis].astype(np.float32)
+        cloudSet = np.concatenate((cloud,index), axis=1)
+        # print('shape(cloudSet): ',cloudSet.shape)
+        patch_seeds_Set = cloudSet[patch_seeds]
+        cloudOut,pointIndex = patch(patch_seeds_Set,cloudSet,choose,36)
+
+
+        cloudOut = np.add(cloudOut, -1.0*target_t) / 1000.0
+        cloudOut = np.add(cloudOut, target_t/1000.0) #将单位由毫米换成米
 
         add_t = np.array([random.uniform(-self.noise_trans,self.noise_trans) for i in range(3)])
         if self.add_noise:
-            cloud = np.add(cloud,add_t)
+            cloudOut = np.add(cloudOut,add_t)
 
-        img_masked = self.norm(torch.from_numpy(img_masked.astype(np.float32)))
-        img_masked = img_masked.numpy()
-        img_c0 = img_masked[0,:,:].flatten()[choose][:,np.newaxis].astype(np.float32)
-        img_c1 = img_masked[1,:,:].flatten()[choose][:,np.newaxis].astype(np.float32)
-        img_c2 = img_masked[2,:,:].flatten()[choose][:,np.newaxis].astype(np.float32)
-        img_choose = np.concatenate((img_c0, img_c1, img_c2),axis = 1) #self.numPoints行，3列
+        # img_masked = self.norm(torch.from_numpy(img_masked.astype(np.float32)))
+        # img_masked = img_masked.numpy()
+        # img_c0 = img_masked[0,:,:].flatten()[choose][:,np.newaxis].astype(np.float32)
+        # img_c1 = img_masked[1,:,:].flatten()[choose][:,np.newaxis].astype(np.float32)
+        # img_c2 = img_masked[2,:,:].flatten()[choose][:,np.newaxis].astype(np.float32)
+        # img_choose = np.concatenate((img_c0, img_c1, img_c2),axis = 1) #self.numPoints行，3列
+        
         # self.norm(torch.from_numpy(img_masked.astype(np.float32)))
-
         # img_cloud = np.concatenate((img_choose, cloud),axis = 1) #self.numOfChoosedPoints行，6列
         # img_cloud = np.transpose(img_cloud, (1, 0))
         # img_cloud = img_cloud.reshape(6,self.pooledImgSize,self.pooledImgSize)
@@ -178,8 +195,9 @@ class PoseDataset(data.Dataset):
             out_t = target_t / 1000.0
         
         # return self.norm(torch.from_numpy(img_cloud.astype(np.float32))),\
-        return torch.from_numpy(img_choose.astype(np.float32)),\
-               torch.from_numpy(cloud.astype(np.float32)), \
+        return self.norm(torch.from_numpy(img_masked.astype(np.float32))),\
+               torch.from_numpy(cloudOut.astype(np.float32)), \
+               torch.LongTensor(pointIndex.astype(np.int32)), \
                torch.from_numpy(target.astype(np.float32)), \
                torch.from_numpy(model_points.astype(np.float32)), \
                torch.LongTensor([self.objlist.index(obj)]),\
@@ -267,6 +285,31 @@ def ply_vtx(path):
     for _ in range(N):
         pts.append(np.float32(f.readline().split()[:3]))
     return np.array(pts)
+
+def patch(patch_seed_cloud,cloud,index,k):
+    cloudOut = []
+    pointIndex = []
+    patch_num = patch_seed_cloud.shape[0]
+    cloudNum = cloud.shape[0]
+    for i in range(patch_num):
+        # pointIndex.append(patch_seed_cloud[i,3])
+
+        patch_cloud = patch_seed_cloud[i,:3]
+        diffMat = np.tile(patch_cloud,(cloudNum,1)) - cloud[:,:3]
+        sqDiffMat = diffMat ** 2
+        sqDistances = sqDiffMat.sum(axis=1)
+        distances = sqDistances**0.5
+        sortedDistIndicies = distances.argsort()
+
+        for j in range(k):
+            # if j == 0:
+            #     print(index[sortedDistIndicies[j]])
+            pointIndex.append(index[sortedDistIndicies[j]])
+            cloudOut.append(cloud[sortedDistIndicies[j],:3])
+    pointIndex = np.array(pointIndex)
+    cloudOut = np.array(cloudOut)
+    return cloudOut,pointIndex
+
 
 # #%%
 # import numpy as np

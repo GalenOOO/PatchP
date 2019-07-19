@@ -12,7 +12,7 @@ import torch.utils.data as data
 from torch.autograd import Variable
 
 from datasets.dataset import PoseDataset as PoseDataset
-from networks.network_bak import poseNet,poseRefineNet
+from networks.network import poseNet,poseRefineNet
 from libs.loss import Loss
 from tools.utils import setup_logger
 
@@ -44,7 +44,7 @@ def main():
     # 根据数据集配置物体种类，用于预测位姿的点数，每个epoch训练的次数，模型保存的位置，log保存的位置
     if opt.dataset == 'linemod':
         opt.numObjects = 13
-        opt.numPoints = 500
+        opt.numPoints = 576
         opt.repeatEpoch = 20
         opt.modelFolder = 'trainedModels/'
         opt.logFolder = 'experimentResult/logs/'
@@ -92,16 +92,17 @@ def main():
         optimizer.zero_grad()
         for rep in range(opt.repeatEpoch):
             for i,data in enumerate(dataLoader,0):
-                img, cloud, tarPoints, modelPoints, idx, ori_img = data
+                img, cloud, pointIndex ,tarPoints, modelPoints, idx, ori_img = data
                 
                 img = Variable(img).cuda()
                 cloud = Variable(cloud).cuda()
+                pointIndex = Variable(pointIndex).cuda()
                 tarPoints = Variable(tarPoints).cuda()
                 modelPoints = Variable(modelPoints).cuda()
                 idx = Variable(idx).cuda()
                 ori_img = np.array(ori_img)
 
-                pred_r, pred_t, pred_c, colorEmb = estimator(img,cloud,idx)
+                pred_r, pred_t, pred_c, colorEmb = estimator(img,cloud,pointIndex,idx)
                 loss , dis, newCloud, newTarPoints = poseNetLoss(pred_r,pred_t,pred_c,tarPoints,modelPoints,idx,cloud,opt.w,opt.refine_start)
 
                 loss.backward()
@@ -126,16 +127,17 @@ def main():
         test_count = 0
         estimator.eval()
         for j,data in enumerate(testdataLoader,0):
-            img, cloud, tarPoints, modelPoints, idx, ori_img = data
+            img, cloud, pointIndex, tarPoints, modelPoints, idx, ori_img = data
                 
             img = Variable(img).cuda()
             cloud = Variable(cloud).cuda()
+            pointIndex = Variable(pointIndex).cuda()
             tarPoints = Variable(tarPoints).cuda()
             modelPoints = Variable(modelPoints).cuda()
             idx = Variable(idx).cuda()
             ori_img = np.array(ori_img)
 
-            pred_r, pred_t, pred_c, colorEmb = estimator(img,cloud,idx)
+            pred_r, pred_t, pred_c, colorEmb = estimator(img,cloud,pointIndex,idx)
             loss , dis, newCloud, newTarPoints = poseNetLoss(pred_r,pred_t,pred_c,tarPoints,modelPoints,idx,cloud,opt.w,opt.refine_start)
 
             logger.info('Test time {0} Test Frame No.{1} dis:{2}'.format(time.strftime("%Hh %Mm %Ss", time.gmtime(time.time() - st_time)), test_count, dis))

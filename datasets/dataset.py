@@ -152,7 +152,12 @@ class PoseDataset(data.Dataset):
         pt1 = (xmap_masked - self.cam_cy) * pt2 / self.cam_fy #点云的y
         cloud = np.concatenate((pt0, pt1, pt2),axis = 1) #cloud self.numPoints行，3列
 
-
+        if cloud.shape[0] == 0:
+            return self.norm(torch.from_numpy(img_masked.astype(np.float32))),\
+               torch.from_numpy(cloud.astype(np.float32)), \
+               torch.LongTensor(choose.astype(np.int32)), \
+               torch.LongTensor([self.objlist.index(obj)]),\
+               ori_img
         index = choose[:,np.newaxis].astype(np.float32)
         cloudSet = np.concatenate((cloud,index), axis=1)
         # print('shape(cloudSet): ',cloudSet.shape)

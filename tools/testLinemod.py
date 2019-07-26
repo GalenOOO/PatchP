@@ -29,19 +29,19 @@ opt = parser.parse_args()
 
 numObjects = 13
 objList = [1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15]
-numPoints = 500
+numPoints = 576
 pooledImgSize = 48
 batchSize = 1
 datasetConfigDir = '/home/galen/deepLearning/poseEstimation/DenseFusion/datasets/linemod/Linemod_preprocessed/models/'
 output_result_dir = 'experimentResult/eval_results/linemod'
 knn = KNearestNeighbor(1)
 
-estimator = poseNet(pooledImgSize,numObjects)
+estimator = poseNet(numPoints,numObjects)
 estimator.cuda()
 estimator.load_state_dict(torch.load(opt.model))
 estimator.eval()
 
-testDataset = PoseDataset('eval',pooledImgSize,False,opt.datasetRoot,0.0,True)
+testDataset = PoseDataset('eval',numPoints,False,opt.datasetRoot,0.0,True)
 testDataLoader = torch.utils.data.DataLoader(testDataset,batch_size=1,shuffle=False, num_workers=10)
 
 symList = testDataset.get_sym_list()
@@ -60,24 +60,27 @@ successCount = [0 for i in range(numObjects)]
 numCount = [0 for i in range(numObjects)]
 cnt = 0
 for i,data in enumerate(testDataLoader, 0):
-    if len(data) != 6:
+    if len(data) != 7:
         print(i,len(data))
         continue
-    img_cloud, cloud, tarPoints, modelPoints, idx, ori_img = data
-    ori_img = np.array(ori_img)
-
+    img, cloud, pointIndex ,tarPoints, modelPoints, idx, ori_img = data
+                
+    
     cnt += 1
     if cnt%100 != 0:
         continue
     if len(cloud.size()) == 2:
         print('No.{0} NOT Pass! Lost detection!'.format(i))
         continue
-    img_cloud = Variable(img_cloud).cuda()
+    img = Variable(img).cuda()
     cloud = Variable(cloud).cuda()
+    pointIndex = Variable(pointIndex).cuda()
     tarPoints = Variable(tarPoints).cuda()
     modelPoints = Variable(modelPoints).cuda()
     idx = Variable(idx).cuda()
-    pred_r, pred_t, pred_c, colorEmb = estimator(img_cloud,idx)
+    ori_img = np.array(ori_img)
+
+    pred_r, pred_t, pred_c, colorEmb = estimator(img,cloud,pointIndex,idx)
 
     bs, num_p,_ = pred_c.size()
     pred_r = pred_r / (torch.norm(pred_r, dim=2).view(1, num_p, 1))

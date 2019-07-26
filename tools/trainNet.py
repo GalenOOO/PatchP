@@ -66,6 +66,7 @@ def main():
     if opt.dataset == 'linemod':
         dataset = PoseDataset('train', opt.numPoints, opt.addNoise, opt.datasetRoot, opt.noiseTrans, opt.refine_start)
         test_dataset = PoseDataset('test', opt.numPoints, False, opt.datasetRoot, 0.0, opt.refine_start)
+        
     dataLoader = torch.utils.data.DataLoader(dataset,batch_size=1, shuffle=True, num_workers=opt.workers)
     testdataLoader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=opt.workers)
     opt.symList = dataset.get_sym_list()

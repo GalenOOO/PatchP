@@ -32,7 +32,8 @@ class featureFusionNet(nn.Module):
 
         self.featConv1 = nn.Conv1d(256,512,1)
         self.featConv2 = nn.Conv1d(512,1024,1) 
-
+        
+        self.patchFeat = nn.AvgPool1d(36)
         self.getGlobalFeat = nn.AvgPool1d(num_points)
         
     def forward(self,colorEmb,cloud):
@@ -44,14 +45,16 @@ class featureFusionNet(nn.Module):
         colorFeat2 = F.relu(self.colorConv2(colorFeat1))
         catFeat2 = torch.cat((cloudFeat2,colorFeat2), dim=1) #128+128=256dim
 
-        fusionFeat = F.relu(self.featConv1(catFeat2))
-        fusionFeat = F.relu(self.featConv2(fusionFeat))
+        fusionFeat = F.relu(self.featConv1(catFeat2)) #bs*512*num_points
+        patchFeat = self.patchFeat(fusionFeat) #bs*512*16
 
+        fusionFeat = F.relu(self.featConv2(fusionFeat))#bs*1024*num_points
         globalFeat = self.getGlobalFeat(fusionFeat) #globalFeat: bs*1024*1
-        globalFeat = globalFeat.view(-1,1024)
+
+        globalFeat = globalFeat.view(-1,1024,1).repeat(1,1,16)
         # globalFeat = globalFeat.view(-1,1024,1).repeat(1,1,self.num_points)
         # 返回结果是bs×1408×num_points维的变量
-        return torch.cat([catFeat1,catFeat2],dim=1),globalFeat #128 + 256, 1024
+        return torch.cat([patchFeat,globalFeat],dim=1),globalFeat #512 + 1024, 1024
 
 class featureExtraction(nn.Module):
     def __init__(self,pooledImgSize):
@@ -85,30 +88,30 @@ class poseNet(nn.Module): #必须继承nn.Module
         self.bodyCNN = modifiedResNet()
         self.feat = featureFusionNet(num_points)
 
-        self.Rconv0 = nn.Linear(1024,512)
-        self.tconv0 = nn.Linear(1024,512)
-        self.cconv0 = nn.Linear(1024,512)
+        # self.Rconv0 = nn.Linear(1024,512)
+        # self.tconv0 = nn.Linear(1024,512)
+        # self.cconv0 = nn.Linear(1024,512)
 
-        self.Rconv1 = nn.Linear(512,128)
-        self.tconv1 = nn.Linear(512,128)
-        self.cconv1 = nn.Linear(512,128)
+        # self.Rconv1 = nn.Linear(512,128)
+        # self.tconv1 = nn.Linear(512,128)
+        # self.cconv1 = nn.Linear(512,128)
 
 
-        self.conv1_r = nn.Conv1d(384,512,3,3)
-        self.conv1_t = nn.Conv1d(384,512,3,3)
-        self.conv1_c = nn.Conv1d(384,512,3,3)
+        self.conv1_r = nn.Conv1d(1536,512,1)
+        self.conv1_t = nn.Conv1d(1536,512,1)
+        self.conv1_c = nn.Conv1d(1536,512,1)
 
-        self.conv2_r = nn.Conv1d(512,256,3,3)
-        self.conv2_t = nn.Conv1d(512,256,3,3)
-        self.conv2_c = nn.Conv1d(512,256,3,3)
+        self.conv2_r = nn.Conv1d(512,256,1)
+        self.conv2_t = nn.Conv1d(512,256,1)
+        self.conv2_c = nn.Conv1d(512,256,1)
 
-        self.conv3_r = nn.Conv1d(256,128,4)
-        self.conv3_t = nn.Conv1d(256,128,4)
-        self.conv3_c = nn.Conv1d(256,128,4)
+        self.conv3_r = nn.Conv1d(256,128,1)
+        self.conv3_t = nn.Conv1d(256,128,1)
+        self.conv3_c = nn.Conv1d(256,128,1)
 
-        self.conv4_r = nn.Conv1d(256,num_obj*4,1) #四元数
-        self.conv4_t = nn.Conv1d(256,num_obj*3,1)
-        self.conv4_c = nn.Conv1d(256,num_obj*1,1)
+        self.conv4_r = nn.Conv1d(128,num_obj*4,1) #四元数
+        self.conv4_t = nn.Conv1d(128,num_obj*3,1)
+        self.conv4_c = nn.Conv1d(128,num_obj*1,1)
 
     def forward(self, img, cloud, choose, obj):
         colorFeat = self.bodyCNN(img) #colorFeat的di应该是32。大小和输入的img一样
@@ -129,16 +132,16 @@ class poseNet(nn.Module): #必须继承nn.Module
         denseFeature, globalFeat = self.feat(colorEmb,cloud) 
         # denseFeature bs* 1024dim * (pooledImgSize * pooledImgSize)
         # globalFeat: bs*1024*1
-        denseFeature = denseFeature.view(bs,384,-1)
+        denseFeature = denseFeature.view(bs,1536,-1)
         #------------%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%---------------------
         # 融合globalFeat 和 patchFeat
-        rx_g = F.relu(self.Rconv0(globalFeat))
-        tx_g = F.relu(self.tconv0(globalFeat))
-        cx_g = F.relu(self.cconv0(globalFeat))
+        # rx_g = F.relu(self.Rconv0(globalFeat))
+        # tx_g = F.relu(self.tconv0(globalFeat))
+        # cx_g = F.relu(self.cconv0(globalFeat))
 
-        rx_g = F.relu(self.Rconv1(rx_g))
-        tx_g = F.relu(self.tconv1(tx_g))
-        cx_g = F.relu(self.cconv1(cx_g))
+        # rx_g = F.relu(self.Rconv1(rx_g))
+        # tx_g = F.relu(self.tconv1(tx_g))
+        # cx_g = F.relu(self.cconv1(cx_g))
 
         rx = F.relu(self.conv1_r(denseFeature)) #dim = 512
         tx = F.relu(self.conv1_t(denseFeature)) #dim = 512
@@ -152,15 +155,15 @@ class poseNet(nn.Module): #必须继承nn.Module
         tx = F.relu(self.conv3_t(tx))
         cx = F.relu(self.conv3_c(cx))
 
-        _, dimensions, numPatchs =  cx.size()
-        rx_g = rx_g.view(-1,128,1).repeat(1,1,numPatchs)#dim = 512
-        tx_g = tx_g.view(-1,128,1).repeat(1,1,numPatchs)
-        cx_g = cx_g.view(-1,128,1).repeat(1,1,numPatchs)
+        # _, dimensions, numPatchs =  cx.size()
+        # rx_g = rx_g.view(-1,128,1).repeat(1,1,numPatchs)#dim = 512
+        # tx_g = tx_g.view(-1,128,1).repeat(1,1,numPatchs)
+        # cx_g = cx_g.view(-1,128,1).repeat(1,1,numPatchs)
 
         
-        rx = torch.cat([rx,rx_g],dim=1)  #dim = 128 + 128 = 256
-        tx = torch.cat([tx,tx_g],dim=1)
-        cx = torch.cat([cx,cx_g],dim=1)
+        # rx = torch.cat([rx,rx_g],dim=1)  #dim = 128 + 128 = 256
+        # tx = torch.cat([tx,tx_g],dim=1)
+        # cx = torch.cat([cx,cx_g],dim=1)
         #------------%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%---------------------       
 
         rx = self.conv4_r(rx).view(bs,self.num_obj,4,-1)
